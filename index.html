@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Finance Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: linear-gradient(to right, #e0f2fe, #f8fafc);
+      padding: 20px;
+    }
+
+    h1 { text-align: center; }
+
+    .summary {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      flex: 1 1 250px;
+      padding: 15px;
+      border-radius: 10px;
+      color: white;
+      text-align: center;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    .income { background: #4ade80; }
+    .expense { background: #f87171; }
+    .balance { background: #60a5fa; }
+
+    .charts {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .chart-container {
+      flex: 1 1 300px;
+      height: 250px;
+    }
+
+    table {
+      width: 100%;
+      background: white;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: center;
+    }
+
+    button {
+      margin: 3px;
+      padding: 5px 8px;
+      cursor: pointer;
+    }
+
+    input, select {
+      margin: 5px;
+      padding: 6px;
+    }
+
+    @media (max-width: 600px) {
+      .summary, .charts {
+        flex-direction: column;
+      }
+      input, select, button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>Finance Dashboard</h1>
+
+<label>Select Role: </label>
+<select onchange="changeRole(this.value)">
+  <option value="viewer">Viewer</option>
+  <option value="admin">Admin</option>
+</select>
+
+<div id="addSection" style="display:none;">
+  <input type="date" id="date">
+  <input type="number" id="amount" placeholder="Amount">
+  <input type="text" id="category" placeholder="Category">
+  <select id="type">
+    <option value="income">Income</option>
+    <option value="expense">Expense</option>
+  </select>
+  <button onclick="addTransaction()">Add</button>
+</div>
+
+<div class="summary">
+  <div class="card income"><h3 id="income"></h3></div>
+  <div class="card expense"><h3 id="expense"></h3></div>
+  <div class="card balance"><h3 id="balance"></h3></div>
+</div>
+
+<button onclick="filterData('all')">All</button>
+<button onclick="filterData('income')">Income</button>
+<button onclick="filterData('expense')">Expense</button>
+
+<input type="text" placeholder="Search..." onkeyup="searchData(this.value)">
+
+<div class="charts">
+  <div class="chart-container"><canvas id="trendChart"></canvas></div>
+  <div class="chart-container"><canvas id="categoryChart"></canvas></div>
+</div>
+
+<h3>Insights</h3>
+<p id="insight"></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Amount</th>
+      <th>Category</th>
+      <th>Type</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody id="tableData"></tbody>
+</table>
+
+<script>
+window.onload = function () {
+
+  let transactions = JSON.parse(localStorage.getItem("transactions")) || [
+    { date: "2026-01-01", amount: 5000, category: "Salary", type: "income" },
+    { date: "2026-02-02", amount: 2000, category: "Food", type: "expense" }
+  ];
+
+  let editIndex = -1;
+
+  function saveData() {
+    localStorage.setItem("transactions", JSON.stringify(transactions));
+  }
+
+  function renderTable(data = transactions) {
+    if (data.length === 0) {
+      tableData.innerHTML = "<tr><td colspan='5'>No data</td></tr>";
+      return;
+    }
+
+    let html = "";
+    data.forEach((t, i) => {
+      html += `
+        <tr>
+          <td>${t.date}</td>
+          <td>₹${t.amount}</td>
+          <td>${t.category}</td>
+          <td>${t.type}</td>
+          <td>
+            <button onclick="editTransaction(${i})">✏️</button>
+            <button onclick="deleteTransaction(${i})">❌</button>
+          </td>
+        </tr>
+      `;
+    });
+
+    tableData.innerHTML = html;
+  }
+
+  function updateSummary() {
+    let income = 0, expense = 0;
+    transactions.forEach(t => {
+      if (t.type === "income") income += t.amount;
+      else expense += t.amount;
+    });
+
+    incomeEl.innerText = "Income: ₹" + income;
+    expenseEl.innerText = "Expense: ₹" + expense;
+    balanceEl.innerText = "Balance: ₹" + (income - expense);
+  }
+
+  function showInsights() {
+    let map = {}, maxCat = "", maxVal = 0;
+
+    transactions.forEach(t => {
+      if (t.type === "expense") {
+        map[t.category] = (map[t.category] || 0) + t.amount;
+        if (map[t.category] > maxVal) {
+          maxVal = map[t.category];
+          maxCat = t.category;
+        }
+      }
+    });
+
+    insight.innerText = "Top spending: " + maxCat + " (₹" + maxVal + ")";
+  }
+
+  function updateCharts() {
+    let income = 0, expense = 0;
+
+    transactions.forEach(t => {
+      if (t.type === "income") income += t.amount;
+      else expense += t.amount;
+    });
+
+    new Chart(trendChart, {
+      type: "bar",
+      data: {
+        labels: ["Income", "Expense"],
+        datasets: [{ data: [income, expense] }]
+      },
+      options: { maintainAspectRatio: false }
+    });
+
+    new Chart(categoryChart, {
+      type: "pie",
+      data: {
+        labels: ["Income", "Expense"],
+        datasets: [{ data: [income, expense] }]
+      },
+      options: { maintainAspectRatio: false }
+    });
+  }
+
+  window.addTransaction = function () {
+    let t = {
+      date: date.value,
+      amount: Number(amount.value),
+      category: category.value,
+      type: type.value
+    };
+
+    if (!t.date || !t.amount || !t.category) {
+      alert("Fill all fields");
+      return;
+    }
+
+    if (editIndex === -1) {
+      transactions.push(t);
+    } else {
+      transactions[editIndex] = t;
+      editIndex = -1;
+    }
+
+    saveData();
+    clearForm();
+    refresh();
+  };
+
+  window.editTransaction = function (i) {
+    let t = transactions[i];
+    date.value = t.date;
+    amount.value = t.amount;
+    category.value = t.category;
+    type.value = t.type;
+    editIndex = i;
+  };
+
+  window.deleteTransaction = function (i) {
+    transactions.splice(i, 1);
+    saveData();
+    refresh();
+  };
+
+  window.searchData = function (val) {
+    let res = transactions.filter(t =>
+      t.category.toLowerCase().includes(val.toLowerCase())
+    );
+    renderTable(res);
+  };
+
+  window.filterData = function (typeVal) {
+    if (typeVal === "all") renderTable();
+    else renderTable(transactions.filter(t => t.type === typeVal));
+  };
+
+  window.changeRole = function (role) {
+    addSection.style.display = role === "admin" ? "block" : "none";
+  };
+
+  function clearForm() {
+    date.value = "";
+    amount.value = "";
+    category.value = "";
+  }
+
+  function refresh() {
+    renderTable();
+    updateSummary();
+    showInsights();
+    updateCharts();
+  }
+
+  let tableData = document.getElementById("tableData");
+  let incomeEl = document.getElementById("income");
+  let expenseEl = document.getElementById("expense");
+  let balanceEl = document.getElementById("balance");
+  let insight = document.getElementById("insight");
+
+  refresh();
+
+};
+</script>
+
+</body>
+</html>
